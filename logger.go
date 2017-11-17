@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/sirupsen/logrus"
+	"github.com/almonteb/logrus"
 	"github.com/gin-gonic/gin"
 )
 
@@ -16,10 +16,52 @@ import (
 // "http://www.example.com/start.html"
 // "Mozilla/4.08 [en] (Win98; I ;Nav)"
 
+type fieldKey string
+
+type FieldMap map[fieldKey]string
+
+const (
+	FieldKeyHostname   = "hostname"
+	FieldKeyStatusCode = "statusCode"
+	FieldKeyLatency    = "latency"
+	FieldKeyClientIp   = "ClientIP"
+	FieldKeyMethod     = "method"
+	FieldKeyPath       = "path"
+	FieldKeyReferrer   = "referrer"
+	FieldKeyDataLength = "dataLength"
+	FieldKeyUserAgent  = "userAgent"
+)
+
+type GinLogrusConfig struct {
+	TimeFormat string
+	FieldMap   FieldMap
+}
+
 var timeFormat = "02/Jan/2006:15:04:05 -0700"
 
-// Logger is the logrus logger handler
+var DefaultFieldMap = FieldMap{
+	FieldKeyHostname:   "hostname",
+	FieldKeyStatusCode: "statusCode",
+	FieldKeyLatency:    "latency",
+	FieldKeyClientIp:   "ClientIP",
+	FieldKeyMethod:     "method",
+	FieldKeyPath:       "path",
+	FieldKeyReferrer:   "referer",
+	FieldKeyDataLength: "dataLength",
+	FieldKeyUserAgent:  "userAgent",
+}
+
+var DefaultGinLogrusConfig = GinLogrusConfig{
+	TimeFormat: timeFormat,
+	FieldMap:   DefaultFieldMap,
+}
+
 func Logger(log *logrus.Logger) gin.HandlerFunc {
+	return LoggerWithConfig(log, DefaultGinLogrusConfig)
+}
+
+// Logger is the logrus logger handler
+func LoggerWithConfig(log *logrus.Logger, cfg GinLogrusConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// other handler can change c.Path so:
 		path := c.Request.URL.Path
@@ -33,7 +75,7 @@ func Logger(log *logrus.Logger) gin.HandlerFunc {
 		referer := c.Request.Referer()
 		hostname, err := os.Hostname()
 		if err != nil {
-			hostname = "unknow"
+			hostname = "unknown"
 		}
 		dataLength := c.Writer.Size()
 		if dataLength < 0 {
@@ -41,21 +83,21 @@ func Logger(log *logrus.Logger) gin.HandlerFunc {
 		}
 
 		entry := logrus.NewEntry(log).WithFields(logrus.Fields{
-			"hostname":   hostname,
-			"statusCode": statusCode,
-			"latency":    latency, // time to process
-			"clientIP":   clientIP,
-			"method":     c.Request.Method,
-			"path":       path,
-			"referer":    referer,
-			"dataLength": dataLength,
-			"userAgent":  clientUserAgent,
+			cfg.FieldMap[FieldKeyHostname]:   hostname,
+			cfg.FieldMap[FieldKeyStatusCode]: statusCode,
+			cfg.FieldMap[FieldKeyLatency]:    latency, // time to process
+			cfg.FieldMap[FieldKeyClientIp]:   clientIP,
+			cfg.FieldMap[FieldKeyMethod]:     c.Request.Method,
+			cfg.FieldMap[FieldKeyPath]:       path,
+			cfg.FieldMap[FieldKeyReferrer]:   referer,
+			cfg.FieldMap[FieldKeyDataLength]: dataLength,
+			cfg.FieldMap[FieldKeyUserAgent]:  clientUserAgent,
 		})
 
 		if len(c.Errors) > 0 {
 			entry.Error(c.Errors.ByType(gin.ErrorTypePrivate).String())
 		} else {
-			msg := fmt.Sprintf("%s - %s [%s] \"%s %s\" %d %d \"%s\" \"%s\" (%dms)", clientIP, hostname, time.Now().Format(timeFormat), c.Request.Method, path, statusCode, dataLength, referer, clientUserAgent, latency)
+			msg := fmt.Sprintf("%s - %s [%s] \"%s %s\" %d %d \"%s\" \"%s\" (%dms)", clientIP, hostname, time.Now().Format(cfg.TimeFormat), c.Request.Method, path, statusCode, dataLength, referer, clientUserAgent, latency)
 			if statusCode > 499 {
 				entry.Error(msg)
 			} else if statusCode > 399 {
